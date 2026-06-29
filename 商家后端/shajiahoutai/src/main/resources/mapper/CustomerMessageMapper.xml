@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.mapper.CustomerMessageMapper">
+
+    <!-- 用户视角：按 userId 获取会话列表 -->
+    <select id="getConversationsByUser" resultType="java.util.Map">
+        SELECT
+            m.shop_id AS shopId,
+            m.content AS lastMessage,
+            m.message_type AS lastMessageType,
+            m.send_time AS lastSendTime,
+            m.sender_type AS lastSenderType,
+            COALESCE(unread.cnt, 0) AS unreadCount
+        FROM customer_message m
+        INNER JOIN (
+            SELECT shop_id, MAX(send_time) AS max_time
+            FROM customer_message
+            WHERE user_id = #{userId}
+            GROUP BY shop_id
+        ) latest ON m.shop_id = latest.shop_id AND m.send_time = latest.max_time
+        LEFT JOIN (
+            SELECT shop_id, COUNT(*) AS cnt
+            FROM customer_message
+            WHERE user_id = #{userId} AND sender_type = 'SHOP' AND is_read = 0
+            GROUP BY shop_id
+        ) unread ON m.shop_id = unread.shop_id
+        WHERE m.user_id = #{userId}
+        ORDER BY m.send_time DESC
+    </select>
+
+    <!-- 商家视角：按 shopId 获取会话列表 -->
+    <select id="getConversationsByShop" resultType="java.util.Map">
+        SELECT
+            m.user_id AS userId,
+            m.content AS lastMessage,
+            m.message_type AS lastMessageType,
+            m.send_time AS lastSendTime,
+            m.sender_type AS lastSenderType,
+            COALESCE(unread.cnt, 0) AS unreadCount
+        FROM customer_message m
+        INNER JOIN (
+            SELECT user_id, MAX(send_time) AS max_time
+            FROM customer_message
+            WHERE shop_id = #{shopId}
+            GROUP BY user_id
+        ) latest ON m.user_id = latest.user_id AND m.send_time = latest.max_time
+        LEFT JOIN (
+            SELECT user_id, COUNT(*) AS cnt
+            FROM customer_message
+            WHERE shop_id = #{shopId} AND sender_type = 'USER' AND is_read = 0
+            GROUP BY user_id
+        ) unread ON m.user_id = unread.user_id
+        WHERE m.shop_id = #{shopId}
+        ORDER BY m.send_time DESC
+    </select>
+
+    <!-- 用户视角：未读消息总数 -->
+    <select id="countUnreadByUser" resultType="int">
+        SELECT COUNT(*) FROM customer_message
+        WHERE user_id = #{userId} AND sender_type = 'SHOP' AND is_read = 0
+    </select>
+
+    <!-- 用户视角：按店铺分组的未读数 -->
+    <select id="countUnreadByUserGroupByShop" resultType="java.util.Map">
+        SELECT shop_id AS shopId, COUNT(*) AS unreadCount
+        FROM customer_message
+        WHERE user_id = #{userId} AND sender_type = 'SHOP' AND is_read = 0
+        GROUP BY shop_id
+    </select>
+
+    <!-- 商家视角：未读消息总数 -->
+    <select id="countUnreadByShop" resultType="int">
+        SELECT COUNT(*) FROM customer_message
+        WHERE shop_id = #{shopId} AND sender_type = 'USER' AND is_read = 0
+    </select>
+
+    <!-- 商家视角：按用户分组的未读数 -->
+    <select id="countUnreadByShopGroupByUser" resultType="java.util.Map">
+        SELECT user_id AS userId, COUNT(*) AS unreadCount
+        FROM customer_message
+        WHERE shop_id = #{shopId} AND sender_type = 'USER' AND is_read = 0
+        GROUP BY user_id
+    </select>
+
+    <!-- 用户视角：标记已读 -->
+    <update id="markAsReadByUser">
+        UPDATE customer_message SET is_read = 1
+        WHERE user_id = #{userId} AND shop_id = #{shopId}
+          AND sender_type = 'SHOP' AND is_read = 0
+    </update>
+
+    <!-- 商家视角：标记已读 -->
+    <update id="markAsReadByShop">
+        UPDATE customer_message SET is_read = 1
+        WHERE shop_id = #{shopId} AND user_id = #{userId}
+          AND sender_type = 'USER' AND is_read = 0
+    </update>
+
+    <!-- 清空聊天记录 -->
+    <delete id="clearMessages">
+        DELETE FROM customer_message
+        WHERE user_id = #{userId} AND shop_id = #{shopId}
+    </delete>
+
+</mapper>

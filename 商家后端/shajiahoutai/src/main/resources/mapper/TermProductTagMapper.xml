@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.mapper.TermProductTagMapper">
+
+    <select id="selectByProductId" resultType="org.example.entity.TermProductTag">
+        SELECT * FROM term_product_tags 
+        WHERE product_id = #{productId} 
+        ORDER BY id ASC
+    </select>
+
+</mapper>

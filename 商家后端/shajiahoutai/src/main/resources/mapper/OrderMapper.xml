@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.mapper.OrderMapper">
+
+    <sql id="BaseWhere">
+        INNER JOIN order_items oi ON o.id = oi.order_id
+        INNER JOIN term_products tp ON oi.product_id = tp.id
+        LEFT JOIN user_addresses ua ON o.address_id = ua.id
+        LEFT JOIN mall_user u ON o.user_id = u.id
+        WHERE tp.merchant_id = #{shopId}
+        <if test="status != null and status != ''">
+            AND o.status = (
+                CASE #{status}
+                    WHEN 'pending' THEN 1
+                    WHEN 'paid' THEN 2
+                    WHEN 'shipped' THEN 3
+                    WHEN 'completed' THEN 4
+                    WHEN 'cancelled' THEN 0
+                    ELSE -1
+                END
+            )
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                o.order_no LIKE CONCAT('%', #{keyword}, '%')
+                OR COALESCE(NULLIF(ua.name, ''), NULLIF(u.nickname, ''), u.username, '') LIKE CONCAT('%', #{keyword}, '%')
+                OR COALESCE(NULLIF(ua.phone, ''), NULLIF(u.phone, ''), '') LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="startDate != null and startDate != ''">
+            AND o.created_at &gt;= CONCAT(#{startDate}, ' 00:00:00')
+        </if>
+        <if test="endDate != null and endDate != ''">
+            AND o.created_at &lt;= CONCAT(#{endDate}, ' 23:59:59')
+        </if>
+    </sql>
+
+    <select id="selectMerchantOrderPage" resultType="java.util.Map">
+        SELECT
+            t.orderNo,
+            t.createTime,
+            t.customerName,
+            t.customerPhone,
+            t.totalAmount,
+            t.dbStatus,
+            t.productInfo
+        FROM (
+            SELECT DISTINCT
+                o.id,
+                o.order_no   AS orderNo,
+                DATE_FORMAT(o.created_at, '%Y-%m-%d %H:%i:%s') AS createTime,
+                COALESCE(NULLIF(ua.name, ''), NULLIF(u.nickname, ''), u.username, '') AS customerName,
+                COALESCE(NULLIF(ua.phone, ''), NULLIF(u.phone, ''), '') AS customerPhone,
+                IFNULL(o.total_amount, 0) AS totalAmount,
+                o.status     AS dbStatus,
+                (SELECT GROUP_CONCAT(
+                    CONCAT(oi2.product_name, ' x', oi2.quantity)
+                    ORDER BY oi2.id SEPARATOR ', '
+                ) FROM order_items oi2 WHERE oi2.order_id = o.id) AS productInfo
+            FROM orders o
+            <include refid="BaseWhere"/>
+        ) t
+        ORDER BY t.id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countMerchantOrders" resultType="int">
+        SELECT COUNT(DISTINCT o.id)
+        FROM orders o
+        <include refid="BaseWhere"/>
+    </select>
+
+    <select id="selectOrderDetailByNo" resultType="java.util.Map">
+        SELECT
+            o.order_no AS orderNo,
+            DATE_FORMAT(o.created_at, '%Y-%m-%d %H:%i:%s') AS createTime,
+            COALESCE(NULLIF(ua.name, ''), NULLIF(u.nickname, ''), u.username, '') AS customerName,
+            COALESCE(NULLIF(ua.phone, ''), NULLIF(u.phone, ''), '') AS customerPhone,
+            CONCAT(
+                IFNULL(ua.province, ''),
+                IFNULL(ua.city, ''),
+                IFNULL(ua.district, ''),
+                IFNULL(ua.detail, '')
+            ) AS address,
+            IFNULL(o.total_amount, 0) AS totalAmount,
+            o.status AS dbStatus,
+            IFNULL(o.ship_company, '') AS shipCompany,
+            IFNULL(o.ship_no, '') AS trackingNo,
+            IFNULL(o.ship_remark, '') AS shipRemark
+        FROM orders o
+        LEFT JOIN user_addresses ua ON o.address_id = ua.id
+        LEFT JOIN mall_user u ON o.user_id = u.id
+        WHERE o.order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectOrderItemsByOrderNo" resultType="java.util.Map">
+        SELECT
+            oi.product_name AS name,
+            oi.sku_attributes AS spec,
+            IFNULL(oi.price, 0) AS price,
+            oi.quantity AS quantity,
+            IFNULL(oi.price * oi.quantity, 0) AS subtotal
+        FROM order_items oi
+        INNER JOIN term_products tp ON oi.product_id = tp.id
+        WHERE oi.order_id = (SELECT id FROM orders WHERE order_no = #{orderNo} LIMIT 1)
+        <if test="shopId != null">
+            AND tp.merchant_id = #{shopId}
+        </if>
+    </select>
+
+    <select id="selectOrderByNo" resultType="java.util.Map">
+        SELECT o.id, o.order_no, o.status, o.merchant_id, o.user_id, o.pay_time
+        FROM orders o
+        WHERE o.order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
+    <update id="updateStatus">
+        UPDATE orders
+        SET status = #{status},
+            ship_time   = CASE WHEN #{status} = 3 THEN NOW() ELSE ship_time END,
+            receive_time = CASE WHEN #{status} = 4 THEN NOW() ELSE receive_time END,
+            cancel_time  = CASE WHEN #{status} = 0 THEN NOW() ELSE cancel_time END,
+            updated_at  = NOW()
+        WHERE order_no = #{orderNo}
+    </update>
+
+    <update id="updateShipInfo">
+        UPDATE orders
+        SET ship_company = #{express},
+            ship_no = #{trackingNo},
+            ship_remark = #{remark},
+            updated_at = NOW()
+        WHERE order_no = #{orderNo}
+    </update>
+
+</mapper>
