@@ -60,9 +60,9 @@
                 @click="fillDefaultAccount"
                 class="default-btn"
               >
-                使用默认账号登录
+                使用测试账号登录
               </van-button>
-              <p class="default-hint">默认账号: {{ DEFAULT_USERNAME }} / {{ DEFAULT_PASSWORD }}</p>
+              <p class="default-hint">测试环境可用</p>
             </div>
 
             <div class="btn-wrap">
@@ -215,45 +215,37 @@ const route = useRoute()
 const activeTab = ref(0)
 const userStore = useUserStore()
 
-// 自动登录（检查localStorage中是否有7天内的登录信息）
 const autoLogin = async () => {
   try {
-    const loginInfoStr = localStorage.getItem('loginInfo')
-    if (!loginInfoStr) return
+    const token = sessionStorage.getItem('token')
+    const userInfoStr = localStorage.getItem('userInfo')
     
-    const loginInfo = JSON.parse(loginInfoStr)
-    const now = Date.now()
-    
-    // 检查是否过期（7天）
-    if (loginInfo.expireTime && loginInfo.expireTime > now) {
-      // 自动登录
-      const response = await fetch('/user/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username: loginInfo.username,
-          password: loginInfo.password
-        })
-      })
-      
-      const result = await response.json()
-      
-      if (result.code === 200) {
-        // 同步设置 userStore 状态
-        if (result.data) {
-          userStore.setUserInfo(result.data)
+    if (token && userInfoStr) {
+      const loginInfoStr = localStorage.getItem('loginInfo')
+      if (loginInfoStr) {
+        const loginInfo = JSON.parse(loginInfoStr)
+        const now = Date.now()
+        
+        if (!loginInfo.expireTime || loginInfo.expireTime <= now) {
+          localStorage.removeItem('loginInfo')
+          sessionStorage.removeItem('token')
+          localStorage.removeItem('userInfo')
+          return false
         }
-        userStore.setToken(result.token || 'user-token')
+      }
+      
+      try {
+        const userInfo = JSON.parse(userInfoStr)
+        userStore.setUserInfo(userInfo)
+        userStore.setToken(token)
+        
         showToast('自动登录成功')
         const redirectPath = route.query.redirect as string || '/home'
         router.push(redirectPath)
         return true
+      } catch (e) {
+        console.error('自动登录失败:', e)
       }
-    } else {
-      // 已过期，清除缓存
-      localStorage.removeItem('loginInfo')
     }
   } catch (error) {
     console.error('自动登录失败:', error)
@@ -375,12 +367,10 @@ const handleLoginSuccess = (result: { data?: any; token?: string }) => {
   if (loginForm.remember) {
     const loginInfo = {
       username: loginForm.username,
-      password: loginForm.password,
-      expireTime: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7天后过期
+      expireTime: Date.now() + 7 * 24 * 60 * 60 * 1000
     }
     localStorage.setItem('loginInfo', JSON.stringify(loginInfo))
   } else {
-    // 清除之前保存的登录信息
     localStorage.removeItem('loginInfo')
   }
   
